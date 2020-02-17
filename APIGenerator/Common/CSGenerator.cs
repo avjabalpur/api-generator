@@ -151,7 +151,8 @@ namespace CodeGenreater.Common
 
         public static void generateEntity(Table table, string entityPath, string nameSpace)
         {
-            using (var streamWriter = new StreamWriter(Path.Combine(entityPath, Utility.FormatPascalCase(table.Name) + ".cs")))
+            var className = Utility.FormatPascalCase(table.Name) + "Entity";
+            using (var streamWriter = new StreamWriter(Path.Combine(entityPath, className + ".cs")))
             {
                 streamWriter.WriteLine("using System;");
                 streamWriter.WriteLine();
@@ -159,10 +160,10 @@ namespace CodeGenreater.Common
                 streamWriter.WriteLine("{");
 
                 streamWriter.WriteLine("\t\t/// <summary>");
-                streamWriter.WriteLine("\t\t/// Gets or sets the " + Utility.FormatPascalCase(table.Name) + " value.");
+                streamWriter.WriteLine("\t\t/// Gets or sets the " + className + " value.");
                 streamWriter.WriteLine("\t\t/// </summary>");
 
-                streamWriter.WriteLine("\tpublic class " + Utility.FormatPascalCase(table.Name));
+                streamWriter.WriteLine("\tpublic class " + className);
                 streamWriter.WriteLine("\t{");
 
                 streamWriter.WriteLine();
@@ -187,22 +188,27 @@ namespace CodeGenreater.Common
         public static void generateDataAccess(Table table, string path, string nameSpace, string projectType)
         {
             var entityNameSpace = nameSpace + ".Entity";
-            using (var streamWriter = new StreamWriter(Path.Combine(path, Utility.FormatPascalCase(table.Name) + ".cs")))
+            var className = Utility.FormatPascalCase(table.Name) + "Model";
+            using (var streamWriter = new StreamWriter(Path.Combine(path, className + ".cs")))
             {
                 streamWriter.WriteLine("using System;");
                 streamWriter.WriteLine("using System.Collections.Generic;");
                 streamWriter.WriteLine("using System.Data;");
                 streamWriter.WriteLine("using System.Data.SqlClient;");
                 streamWriter.WriteLine("using System.Configuration;");
+                streamWriter.WriteLine("using System.Threading.Tasks;");
+
+                streamWriter.WriteLine("using " + entityNameSpace + ";");
+
                 streamWriter.WriteLine();
                 streamWriter.WriteLine("namespace " + nameSpace);
                 streamWriter.WriteLine("{");
 
                 streamWriter.WriteLine("\t\t/// <summary>");
-                streamWriter.WriteLine("\t\t/// Gets or sets the " + Utility.FormatPascalCase(table.Name) + " value.");
+                streamWriter.WriteLine("\t\t/// Gets or sets the " + className + " value.");
                 streamWriter.WriteLine("\t\t/// </summary>");
 
-                streamWriter.WriteLine("\tpublic class " + Utility.FormatPascalCase(table.Name));
+                streamWriter.WriteLine("\tpublic class " + className);
                 streamWriter.WriteLine("\t{");
 
                 streamWriter.WriteLine();
@@ -217,18 +223,20 @@ namespace CodeGenreater.Common
                 // Append the constructors
                 streamWriter.WriteLine("\t\t#region Constructors");
                 streamWriter.WriteLine();
-                streamWriter.WriteLine("\t\tpublic " + Utility.FormatPascalCase(table.Name) + "()");
+                streamWriter.WriteLine("\t\tpublic " + className + "()");
                 streamWriter.WriteLine("\t\t{");
                 streamWriter.WriteLine("\t\t\tthis.connectionString = Utility.GetConnectionString();");
                 streamWriter.WriteLine("\t\t}");
                 streamWriter.WriteLine();
                 streamWriter.WriteLine("\t\t#endregion");
                 streamWriter.WriteLine();
+               
+                createGetAllMethodWithQuery(table, streamWriter);
+                createGetMethodWithQuery(table, streamWriter);
 
-                createSaveMethod(table, streamWriter, entityNameSpace);
-                createGetMethod(table, streamWriter, entityNameSpace);
-                createGetAllMethod(table, streamWriter, entityNameSpace);
-                createDeleteMethod(table, streamWriter);
+                createSaveMethodWithQuery(table, streamWriter);
+                createUpdadateMethodWithQuery(table, streamWriter);
+                createDeleteMethodWithQuery(table, streamWriter);
                 createMapMethod(table, streamWriter, entityNameSpace);
 
                 streamWriter.WriteLine("\t}");
@@ -236,12 +244,41 @@ namespace CodeGenreater.Common
             }
         }
 
-        private static void createGetMethod(Table table, StreamWriter streamWriter, string entityNameSpace)
+        
+        private static void createGetAllMethodWithQuery(Table table, StreamWriter streamWriter)
         {
             string className = Utility.FormatPascalCase(table.Name);
+            var entityName = className + "Entity";
+            string variableName = "new List<" + entityName + ">();";
+            // Append the method header
+            streamWriter.WriteLine("\t\t/// <summary>");
+            streamWriter.WriteLine("\t\t/// Get all the record to the " + table.Name + " table.");
+            streamWriter.WriteLine("\t\t/// </summary>");
+
+            streamWriter.WriteLine("\t\tpublic async Task<List<" + entityName + ">> GetAll()");
+
+            streamWriter.WriteLine("\t\t{");
+            streamWriter.WriteLine();
+            streamWriter.WriteLine("\t\t\tvar " + Utility.FormatCamelCase(table.Name) + "= " + variableName);
+            var query = SqlQueryGenerator.GetSelectAllQuery(table);
+
+            generateAdoCodeForSelectAllMethod(table, streamWriter, query, Utility.FormatCamelCase(table.Name));
+            streamWriter.WriteLine();
+            streamWriter.WriteLine("\t\t\treturn " + Utility.FormatCamelCase(table.Name) + ";");
+            streamWriter.WriteLine("\t\t}");
+            streamWriter.WriteLine();
+        }
+
+        private static void createGetMethodWithQuery(Table table, StreamWriter streamWriter)
+        {
+            string className = Utility.FormatPascalCase(table.Name);
+            var entityName = className + "Entity";
             string variableName = Utility.FormatCamelCase(table.Name);
             // Append the method header
-            streamWriter.Write("\t\tpublic " + entityNameSpace + "." + className + " Get(");
+            streamWriter.WriteLine("\t\t/// <summary>");
+            streamWriter.WriteLine("\t\t/// Get a record to the " + table.Name + " table.");
+            streamWriter.WriteLine("\t\t/// </summary>");
+            streamWriter.Write("\t\tpublic async Task<" + entityName + "> Get(");
             for (int i = 0; i < table.PrimaryKeys.Count; i++)
             {
                 Column column = table.PrimaryKeys[i];
@@ -253,7 +290,7 @@ namespace CodeGenreater.Common
             }
             streamWriter.WriteLine(")");
             streamWriter.WriteLine("\t\t{");
-            streamWriter.WriteLine("\t\t\tSqlParameter[] parameters = new SqlParameter[]");
+            streamWriter.WriteLine("\t\t\tvar parameters = new SqlParameter[]");
             streamWriter.WriteLine("\t\t\t{");
             for (int i = 0; i < table.PrimaryKeys.Count; i++)
             {
@@ -269,54 +306,23 @@ namespace CodeGenreater.Common
 
             streamWriter.WriteLine("\t\t\t};");
             streamWriter.WriteLine();
-            generateAdoCodeForExecuteReader(table, streamWriter, "SP_Get" + table.Name);
+            var query = SqlQueryGenerator.GetSelectQuery(table);
+            generateAdoCodeForSelectMethod(table, streamWriter, query);
             streamWriter.WriteLine();
             streamWriter.WriteLine("\t\t}");
             streamWriter.WriteLine();
         }
 
-        private static void createGetAllMethod(Table table, StreamWriter streamWriter, string entityNameSpace)
-        {
-            string className = Utility.FormatPascalCase(table.Name);
-            string variableName = "new List<" + entityNameSpace + "." + className + ">();";
-            // Append the method header
-            streamWriter.WriteLine("\t\tpublic List<" + entityNameSpace + "." + className + "> GetAll()");
-            
-            streamWriter.WriteLine("\t\t{");
-            streamWriter.WriteLine();
-            streamWriter.WriteLine("\t\t\tvar " + Utility.FormatCamelCase(table.Name) + "= " + variableName);
-            streamWriter.WriteLine("\t\t\tSqlParameter[] parameters = new SqlParameter[]");
-            streamWriter.WriteLine("\t\t\t{");
-            for (int i = 0; i < table.PrimaryKeys.Count; i++)
-            {
-                Column column = table.PrimaryKeys[i];
-                streamWriter.Write("\t\t\t\tnew SqlParameter(\"@" + column.Name + "\", \"" + 0 + "\")");
-                if (i < (table.PrimaryKeys.Count - 1))
-                {
-                    streamWriter.Write(",");
-                }
-
-                streamWriter.WriteLine();
-            }
-
-            streamWriter.WriteLine("\t\t\t};");
-            generateAdoCodeForExecuteReaderForAll(table, streamWriter, "SP_Get" + table.Name, Utility.FormatCamelCase(table.Name));
-
-            streamWriter.WriteLine();
-            streamWriter.WriteLine("\t\t\treturn " + Utility.FormatCamelCase(table.Name)+";");
-            streamWriter.WriteLine("\t\t}");
-            streamWriter.WriteLine();
-        }
-
-        private static void createSaveMethod(Table table, StreamWriter streamWriter, string entityNameSpace)
+        private static void createSaveMethodWithQuery(Table table, StreamWriter streamWriter)
         {
             string className = Utility.FormatPascalCase(table.Name);
             string variableName = Utility.FormatCamelCase(table.Name);
+            var entityName = className + "Entity";
             // Append the method header
             streamWriter.WriteLine("\t\t/// <summary>");
             streamWriter.WriteLine("\t\t/// Saves a record to the " + table.Name + " table.");
             streamWriter.WriteLine("\t\t/// </summary>");
-            streamWriter.WriteLine("\t\tpublic void Save(" + entityNameSpace + "." + className + " " + variableName + ")");
+            streamWriter.WriteLine("\t\tpublic void Save(" + entityName + " " + variableName + ")");
             streamWriter.WriteLine("\t\t{");
 
             streamWriter.WriteLine("\t\t\tif(" + variableName + " == null)");
@@ -331,7 +337,10 @@ namespace CodeGenreater.Common
             for (int i = 0; i < table.Columns.Count; i++)
             {
                 Column column = table.Columns[i];
-
+                if (column.IsIdentity)
+                {
+                    continue;
+                }
                 streamWriter.Write("\t\t\t\t" + Utility.CreateSqlParameter(table, column));
                 if (i < (table.Columns.Count - 1))
                 {
@@ -341,18 +350,70 @@ namespace CodeGenreater.Common
                 streamWriter.WriteLine();
             }
             streamWriter.WriteLine("\t\t\t};");
-            generateAdoCodeForExecuteNonQuery(table, streamWriter, "SP_Set" + table.Name);
+            var query = SqlQueryGenerator.GetInsertQuery(table);
+            generateAdoCodeForExecuteNonQuery(table, streamWriter, query);
             
             streamWriter.WriteLine();
             streamWriter.WriteLine("\t\t}");
             streamWriter.WriteLine();
         }
 
-        private static void createDeleteMethod(Table table, StreamWriter streamWriter)
+        
+
+            private static void createUpdadateMethodWithQuery(Table table, StreamWriter streamWriter)
+        {
+            string className = Utility.FormatPascalCase(table.Name);
+            string variableName = Utility.FormatCamelCase(table.Name);
+            var entityName = className + "Entity";
+            // Append the method header
+            streamWriter.WriteLine("\t\t/// <summary>");
+            streamWriter.WriteLine("\t\t/// Update a record to the " + table.Name + " table.");
+            streamWriter.WriteLine("\t\t/// </summary>");
+            streamWriter.WriteLine("\t\tpublic void Update(" + entityName + " " + variableName + ")");
+            streamWriter.WriteLine("\t\t{");
+
+            streamWriter.WriteLine("\t\t\tif(" + variableName + " == null)");
+            streamWriter.WriteLine("\t\t\t\tthrow new Exception(" + variableName + "+\" not be null\");");
+            streamWriter.WriteLine();
+
+
+            // Append the parameter declarations
+            streamWriter.WriteLine("\t\t\tSqlParameter[] parameters = new SqlParameter[]");
+            streamWriter.WriteLine("\t\t\t{");
+
+            for (int i = 0; i < table.Columns.Count; i++)
+            {
+                Column column = table.Columns[i];
+                //if (column.IsIdentity)
+                //{
+                //    continue;
+                //}
+                streamWriter.Write("\t\t\t\t" + Utility.CreateSqlParameter(table, column));
+                if (i < (table.Columns.Count - 1))
+                {
+                    streamWriter.Write(",");
+                }
+
+                streamWriter.WriteLine();
+            }
+            streamWriter.WriteLine("\t\t\t};");
+            var query = SqlQueryGenerator.GetUpdateQuery(table);
+            generateAdoCodeForExecuteNonQuery(table, streamWriter, query);
+
+            streamWriter.WriteLine();
+            streamWriter.WriteLine("\t\t}");
+            streamWriter.WriteLine();
+        }
+
+        private static void createDeleteMethodWithQuery(Table table, StreamWriter streamWriter)
         {
             string className = Utility.FormatPascalCase(table.Name);
             string variableName = Utility.FormatCamelCase(table.Name);
             // Append the method header
+            streamWriter.WriteLine("\t\t/// <summary>");
+            streamWriter.WriteLine("\t\t/// Delete a record to the " + table.Name + " table.");
+            streamWriter.WriteLine("\t\t/// </summary>");
+
             streamWriter.Write("\t\tpublic void Delete(");
             for (int i = 0; i < table.PrimaryKeys.Count; i++)
             {
@@ -381,22 +442,22 @@ namespace CodeGenreater.Common
 
             streamWriter.WriteLine("\t\t\t};");
             streamWriter.WriteLine();
-            generateAdoCodeForExecuteNonQuery(table, streamWriter, "SP_Delete" + table.Name);
+            var query = SqlQueryGenerator.GetDeleteQuery(table);
+            generateAdoCodeForExecuteNonQuery(table, streamWriter, query.ToString());
 
             streamWriter.WriteLine();
             streamWriter.WriteLine("\t\t}");
             streamWriter.WriteLine();
         }
 
-        private static void generateAdoCodeForExecuteNonQuery(Table table, StreamWriter streamWriter, string procedureName)
+        private static void generateAdoCodeForExecuteNonQuery(Table table, StreamWriter streamWriter, string query)
         {
             
-            streamWriter.WriteLine();
             streamWriter.WriteLine("\t\t\tusing (var con = new SqlConnection(this.connectionString))");
             streamWriter.WriteLine("\t\t\t{");
             streamWriter.WriteLine("\t\t\t\tcon.Open();");
-            streamWriter.WriteLine("\t\t\t\tvar cmd = new SqlCommand(\"" + procedureName + "\", con);");
-            streamWriter.WriteLine("\t\t\t\tcmd.CommandType = System.Data.CommandType.StoredProcedure;");
+            streamWriter.WriteLine();
+            streamWriter.WriteLine("\t\t\t\tvar cmd = new SqlCommand(\"" + query + ", con);");
             streamWriter.WriteLine("\t\t\t\tcmd.Parameters.AddRange(parameters);");
             streamWriter.WriteLine("\t\t\t\tcmd.ExecuteNonQuery();");
             streamWriter.WriteLine("\t\t\t\tcon.Close();");
@@ -404,38 +465,33 @@ namespace CodeGenreater.Common
 
         }
 
-        private static void generateAdoCodeForExecuteReaderForAll(Table table, StreamWriter streamWriter, string procedureName, string variableName)
+        private static void generateAdoCodeForSelectAllMethod(Table table, StreamWriter streamWriter, string query, string variableName)
         {
 
             streamWriter.WriteLine();
             streamWriter.WriteLine("\t\t\tusing (var con = new SqlConnection(this.connectionString))");
             streamWriter.WriteLine("\t\t\t{");
             streamWriter.WriteLine("\t\t\t\tcon.Open();");
-            streamWriter.WriteLine("\t\t\t\tvar cmd = new SqlCommand(\"" + procedureName + "\", con);");
-            streamWriter.WriteLine("\t\t\t\tcmd.CommandType = System.Data.CommandType.StoredProcedure;");
-            streamWriter.WriteLine("\t\t\t\tcmd.Parameters.AddRange(parameters);");
+            streamWriter.WriteLine("\t\t\t\tvar cmd = new SqlCommand(\"" + query + "\", con);");
             streamWriter.WriteLine("\t\t\t\tusing (var reader = cmd.ExecuteReader())");
             streamWriter.WriteLine("\t\t\t\t{");
-
             streamWriter.WriteLine("\t\t\t\t\twhile (reader.Read())");
             streamWriter.WriteLine("\t\t\t\t\t{");
             streamWriter.WriteLine("\t\t\t\t\t " + variableName + ".Add( MapDataReader(reader));");
             streamWriter.WriteLine("\t\t\t\t\t}");
             streamWriter.WriteLine("\t\t\t\t}");
-            streamWriter.WriteLine("\t\t\t\tcon.Close();");
             streamWriter.WriteLine("\t\t\t}");
 
         }
 
-        private static void generateAdoCodeForExecuteReader(Table table, StreamWriter streamWriter, string procedureName)
+        private static void generateAdoCodeForSelectMethod(Table table, StreamWriter streamWriter, string query)
         {
 
             streamWriter.WriteLine();
             streamWriter.WriteLine("\t\t\t\tusing (var con = new SqlConnection(this.connectionString))");
             streamWriter.WriteLine("\t\t\t\t{");
             streamWriter.WriteLine("\t\t\t\t\tcon.Open();");
-            streamWriter.WriteLine("\t\t\t\t\tvar cmd = new SqlCommand(\"" + procedureName + "\", con);");
-            streamWriter.WriteLine("\t\t\t\t\tcmd.CommandType = System.Data.CommandType.StoredProcedure;");
+            streamWriter.WriteLine("\t\t\t\t\tvar cmd = new SqlCommand(\"" + query + "\", con);");
             streamWriter.WriteLine("\t\t\t\t\tcmd.Parameters.AddRange(parameters);");
             streamWriter.WriteLine("\t\t\t\t\tusing (var reader = cmd.ExecuteReader())");
             streamWriter.WriteLine("\t\t\t\t\t{");
@@ -445,7 +501,6 @@ namespace CodeGenreater.Common
             streamWriter.WriteLine("\t\t\t\t\t\treturn MapDataReader(reader);");
             streamWriter.WriteLine("\t\t\t\t\t\t}");
             streamWriter.WriteLine("\t\t\t\t\t}");
-            streamWriter.WriteLine("\t\t\t\tcon.Close();");
             streamWriter.WriteLine("\t\t\t\treturn null;");
             streamWriter.WriteLine("\t\t\t\t}");
 
@@ -481,19 +536,19 @@ namespace CodeGenreater.Common
         {
             string className = Utility.FormatPascalCase(table.Name);
             string variableName = Utility.FormatCamelCase(className);
+            var entityName = className + "Entity";
 
             streamWriter.WriteLine("\t\t/// <summary>");
             streamWriter.WriteLine("\t\t/// Creates a new instance of the " + className + " class and populates it with data from the specified SqlDataReader.");
             streamWriter.WriteLine("\t\t/// </summary>");
-            streamWriter.WriteLine("\t\tprivate " + entityNameSpace + "." + className + " MapDataReader(SqlDataReader dataReader)");
+            streamWriter.WriteLine("\t\tprivate " + entityName + " MapDataReader(IDataRecord dataReader)");
             streamWriter.WriteLine("\t\t{");
-            streamWriter.WriteLine("\t\t\tvar " + variableName + " = new " + entityNameSpace + "." + className + "();");
+            streamWriter.WriteLine("\t\t\tvar " + variableName + " = new " + entityName + "();");
             int i = 0;
             foreach (Column column in table.Columns)
             {
                 string columnNamePascal = Utility.FormatPascalCase(column.Name);
-                //streamWriter.WriteLine("\t\t\t" + variableName + "." + columnNamePascal + " = dataReader." + Utility.GetGetMethod(column) + "(\"" + column.Name + "\", " + Utility.GetDefaultValue(column) + ");");
-                streamWriter.WriteLine("\t\t\t" + variableName + "." + columnNamePascal + " = dataReader." + Utility.GetGetMethod(column) + "("+ i +");");
+                streamWriter.WriteLine("\t\t\t" + variableName + "." + columnNamePascal + " = Utility." + Utility.GetMapperMethod(column) + "(dataReader, \"" + column.Name + "\");");
                 ++i;
             }
 
@@ -522,6 +577,69 @@ namespace CodeGenreater.Common
                 streamWriter.WriteLine("\t\t{");
                 streamWriter.WriteLine("\t\t\treturn ConfigurationManager.ConnectionStrings[\"DefaultConnection\"].ConnectionString;");
                 streamWriter.WriteLine("\t\t}");
+                streamWriter.WriteLine();
+                streamWriter.WriteLine("\t\t#region mapperfunction new");
+                
+                //map guid
+                streamWriter.WriteLine("\t\tpublic static Guid MapGuid(IDataRecord reader, string columnName)");
+                streamWriter.WriteLine("\t\t{");
+                streamWriter.WriteLine("\t\t\tif (reader[columnName] == DBNull.Value)");
+                streamWriter.WriteLine("\t\t\treturn default(Guid);");
+                streamWriter.WriteLine("\t\t\treturn reader.GetGuid(reader.GetOrdinal(columnName));");
+                streamWriter.WriteLine("\t\t}");
+
+                //map string
+                streamWriter.WriteLine("\t\tpublic static string MapString(IDataRecord reader, string columnName)");
+                streamWriter.WriteLine("\t\t{");
+                streamWriter.WriteLine("\t\t\tif (reader[columnName] == DBNull.Value)");
+                streamWriter.WriteLine("\t\t\treturn null;");
+                streamWriter.WriteLine("\t\t\treturn reader[columnName].ToString();");
+                streamWriter.WriteLine("\t\t}");
+
+
+                //map int
+                streamWriter.WriteLine("\t\tpublic static int MapInt(IDataRecord reader, string columnName)");
+                streamWriter.WriteLine("\t\t{");
+                streamWriter.WriteLine("\t\t\tif (reader[columnName] == DBNull.Value)");
+                streamWriter.WriteLine("\t\t\treturn default(int);");
+                streamWriter.WriteLine("\t\t\treturn (int)reader[columnName];");
+                streamWriter.WriteLine("\t\t}");
+
+                //map decimal
+                streamWriter.WriteLine("\t\tpublic static decimal MapDecimal(IDataRecord reader, string columnName)");
+                streamWriter.WriteLine("\t\t{");
+                streamWriter.WriteLine("\t\t\tif (reader[columnName] == DBNull.Value)");
+                streamWriter.WriteLine("\t\t\treturn default(decimal);");
+                streamWriter.WriteLine("\t\t\treturn reader.GetDecimal(reader.GetOrdinal(columnName));");
+                streamWriter.WriteLine("\t\t}");
+
+                //map float
+                streamWriter.WriteLine("\t\tpublic static float MapFloat(IDataRecord reader, string columnName)");
+                streamWriter.WriteLine("\t\t{");
+                streamWriter.WriteLine("\t\t\tif (reader[columnName] == DBNull.Value)");
+                streamWriter.WriteLine("\t\t\treturn default(float);");
+                streamWriter.WriteLine("\t\t\treturn reader.GetFloat(reader.GetOrdinal(columnName));");
+                streamWriter.WriteLine("\t\t}");
+
+                //map DateTime
+                streamWriter.WriteLine("\t\tpublic static DateTime MapDateTime(IDataRecord reader, string columnName)");
+                streamWriter.WriteLine("\t\t{");
+                streamWriter.WriteLine("\t\t\tif (reader[columnName] == DBNull.Value)");
+                streamWriter.WriteLine("\t\t\treturn default(DateTime);");
+                streamWriter.WriteLine("\t\t\treturn reader.GetDateTime(reader.GetOrdinal(columnName));");
+                streamWriter.WriteLine("\t\t}");
+
+                //map Bool
+                streamWriter.WriteLine("\t\tpublic static bool MapBool(IDataRecord reader, string columnName)");
+                streamWriter.WriteLine("\t\t{");
+                streamWriter.WriteLine("\t\t\tif (reader[columnName] == DBNull.Value)");
+                streamWriter.WriteLine("\t\t\treturn default(bool);");
+                streamWriter.WriteLine("\t\t\treturn reader.GetBoolean(reader.GetOrdinal(columnName));");
+                streamWriter.WriteLine("\t\t}");
+
+                streamWriter.WriteLine("\t\t#endregion");
+
+
                 streamWriter.WriteLine("\t}");
                 streamWriter.WriteLine("}");
             }

@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -156,6 +157,14 @@ namespace CodeGenreater.Common
        {
            return char.ToLower(orignalText[0]) + orignalText.Substring(1);
        }
+
+
+        public static string SplitTextToDelimater(string Text)
+        {
+            return Regex.Replace(Text, "(\\B[A-Z])", "-$1").ToLower();
+        }
+        
+
 
        /// <summary>
        /// 
@@ -423,12 +432,65 @@ namespace CodeGenreater.Common
            }
        }
 
-       /// <summary>
-       /// Creates a string for the default value of a column's data type.
-       /// </summary>
-       /// <param name="column">The column to get a default value for.</param>
-       /// <returns>The default value for the column.</returns>
-       public static string GetDefaultValue(Column column)
+        public static string GetMapperMethod(Column column)
+        {
+            switch (column.Type.ToLower())
+            {
+                case "uniqueidentifier":
+                    return "MapGuid";
+
+                case "xml":
+                case "ntext":
+                case "nvarchar":
+                case "nchar":
+                case "char":
+                case "sysname":
+                case "text":
+                case "varchar":
+                    return "MapString";
+
+                case "int":
+                case "tinyint":
+                case "bigint":
+                case "smallint":
+                    return "MapInt";
+
+                case "decimal":
+                case "money":
+                case "numeric":
+                case "real":
+                    return "MapDecimal";
+
+                case "datetime":
+                case "date":
+                case "smalldatetime":
+                case "timestamp":
+                    return "MapDateTime";
+
+                case "bit":
+                    return "MapBool";
+
+                case "float":
+                case "smallmoney":
+                    return "MapFloat";
+
+                case "binary":
+                case "image":
+                case "sql_variant":
+                case "varbinary":
+                    return "MapBytes";
+
+                default:  // Unknow data type
+                    throw (new Exception("Invalid SQL Server data type specified: " + column.Type));
+            }
+        }
+
+        /// <summary>
+        /// Creates a string for the default value of a column's data type.
+        /// </summary>
+        /// <param name="column">The column to get a default value for.</param>
+        /// <returns>The default value for the column.</returns>
+        public static string GetDefaultValue(Column column)
        {
            switch (column.Type.ToLower())
            {

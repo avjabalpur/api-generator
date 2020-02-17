@@ -50,7 +50,9 @@
     <Compile Include="Common\Column.cs" />
     <Compile Include="Common\CSGenerator.cs" />
     <Compile Include="Common\SPGenerator.cs" />
+    <Compile Include="Common\SqlQueryGenerator.cs" />
     <Compile Include="Common\Table.cs" />
+    <Compile Include="Common\UserEntity.cs" />
     <Compile Include="Common\Utility.cs" />
     <Compile Include="DAL\DalGenerator.cs" />
     <Compile Include="MainForm.cs">
